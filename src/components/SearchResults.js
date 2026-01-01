@@ -26,6 +26,8 @@ const SearchResults = () => {
   };
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     const getSearchResults = async () => {
       if (!query) {
         setLoading(false);
@@ -34,29 +36,47 @@ const SearchResults = () => {
 
       setLoading(true);
       try {
-        const response = await fetch(getYoutubeSearchApiUrl(query, order, videoDuration));
+        const response = await fetch(
+          getYoutubeSearchApiUrl(query, order, videoDuration),
+          { signal: abortController.signal }
+        );
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const json = await response.json();
 
         if (json.items) {
           // Fetch additional video details (statistics) for each video
           const videoIds = json.items.map((item) => item.id.videoId).join(",");
           const videoDetailsResponse = await fetch(
-            YOUTUBE_VIDEO_DETAILS_API + videoIds
+            YOUTUBE_VIDEO_DETAILS_API + videoIds,
+            { signal: abortController.signal }
           );
+          
+          if (!videoDetailsResponse.ok) {
+            throw new Error(`HTTP error! status: ${videoDetailsResponse.status}`);
+          }
+          
           const videoDetailsJson = await videoDetailsResponse.json();
           setVideos(videoDetailsJson.items || []);
         } else {
           setVideos([]);
         }
       } catch (error) {
-        console.error("Error fetching search results:", error);
-        setVideos([]);
+        if (error.name !== 'AbortError') {
+          console.error("Error fetching search results:", error);
+          setVideos([]);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     getSearchResults();
+
+    return () => abortController.abort();
   }, [query, order, videoDuration]);
 
   if (loading) {

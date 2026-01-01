@@ -31,6 +31,7 @@ const VideoContainer = () => {
     } else {
       fetchVideos();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Infinite scroll
@@ -51,6 +52,8 @@ const VideoContainer = () => {
   }, [loading, nextPageToken]);
 
   const fetchVideos = async () => {
+    if (loading) return; // Prevent duplicate requests
+    
     setLoading(true);
 
     try {
@@ -59,6 +62,11 @@ const VideoContainer = () => {
         : YOUTUBE_VIDEO_API;
 
       const res = await fetch(url);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const json = await res.json();
 
       if (!json.items) return;

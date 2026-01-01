@@ -44,15 +44,20 @@ const Head = () => {
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   /* 🔍 SEARCH SUGGESTIONS */
-  const getSearchSuggestions = useCallback(async (query) => {
+  const getSearchSuggestions = useCallback(async (query, signal) => {
     try {
-      const res = await fetch(YOUTUBE_SEARCH_API + query);
+      const res = await fetch(YOUTUBE_SEARCH_API + query, { signal });
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
       const json = await res.json();
       setSuggestions(json[1] || []);
       dispatch(cacheResults({ [query]: json[1] || [] }));
     } catch (error) {
-      console.error("Error fetching search suggestions:", error);
-      setSuggestions([]);
+      if (error.name !== 'AbortError') {
+        console.error("Error fetching search suggestions:", error);
+        setSuggestions([]);
+      }
     }
   }, [dispatch]);
 
@@ -62,15 +67,19 @@ const Head = () => {
       return;
     }
 
+    const abortController = new AbortController();
     const timer = setTimeout(() => {
       if (searchCache[searchQuery]) {
         setSuggestions(searchCache[searchQuery]);
       } else {
-        getSearchSuggestions(searchQuery);
+        getSearchSuggestions(searchQuery, abortController.signal);
       }
     }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      abortController.abort();
+    };
   }, [searchQuery, searchCache, getSearchSuggestions]);
 
   /* 🔍 HANDLE SEARCH */
@@ -95,6 +104,9 @@ const Head = () => {
         },
       }
     );
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
     const data = await res.json();
     return data.items || [];
   };
@@ -108,28 +120,36 @@ const Head = () => {
 
       dispatch(startLoading()); // ✅ START NOTIFICATION LOADING
 
-      const subs = await fetchSubscriptions(token);
-      dispatch(setSubscriptions(subs));
+      try {
+        // Fetch subscriptions and user info in parallel for better performance
+        const [subs, userInfo] = await Promise.all([
+          fetchSubscriptions(token),
+          fetchUserInfo(token),
+        ]);
 
-      const userInfo = await fetchUserInfo(token);
-      const userKey = userInfo.email;
+        dispatch(setSubscriptions(subs));
 
-      const oldNotifications = getUserNotifications(userKey);
-      const lastChecked = getLastChecked(userKey);
+        const userKey = userInfo.email;
+        const oldNotifications = getUserNotifications(userKey);
+        const lastChecked = getLastChecked(userKey);
 
-      const newNotifications = await fetchUserNotifications(
-        subs,
-        token,
-        lastChecked
-      );
+        const newNotifications = await fetchUserNotifications(
+          subs,
+          token,
+          lastChecked
+        );
 
-      const allNotifications = [...newNotifications, ...oldNotifications];
+        const allNotifications = [...newNotifications, ...oldNotifications];
 
-      saveUserNotifications(userKey, allNotifications);
-      setLastChecked(userKey);
+        saveUserNotifications(userKey, allNotifications);
+        setLastChecked(userKey);
 
-      dispatch(setNotifications(allNotifications));
-      dispatch(stopLoading()); // ✅ STOP LOADING
+        dispatch(setNotifications(allNotifications));
+      } catch (error) {
+        console.error("Error during login process:", error);
+      } finally {
+        dispatch(stopLoading()); // ✅ STOP LOADING
+      }
     },
   });
 

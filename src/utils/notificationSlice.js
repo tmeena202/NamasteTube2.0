@@ -47,6 +47,9 @@ export const fetchUserInfo = async (token) => {
       Authorization: `Bearer ${token}`,
     },
   });
+  if (!res.ok) {
+    throw new Error(`HTTP error! status: ${res.status}`);
+  }
   return res.json();
 };
 
@@ -71,42 +74,56 @@ export const getLastChecked = (userKey) =>
 export const setLastChecked = (userKey) =>
   localStorage.setItem(`yt_last_checked_${userKey}`, new Date().toISOString());
 
-// fetch new videos from subscriptions
+// fetch new videos from subscriptions (parallelized for efficiency)
 export const fetchUserNotifications = async (
   subscriptions,
   token,
   lastChecked
 ) => {
-  const notifications = [];
-
-  for (const sub of subscriptions) {
+  // Fetch all subscription videos in parallel instead of sequentially
+  const fetchPromises = subscriptions.map(async (sub) => {
     const channelId = sub.snippet.resourceId.channelId;
     const channelTitle = sub.snippet.title;
 
-    const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=1`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=1`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!res.ok) {
+        console.error(`Failed to fetch videos for channel ${channelId}: ${res.status}`);
+        return null;
       }
-    );
 
-    const data = await res.json();
-    const video = data.items?.[0];
-    if (!video) continue;
+      const data = await res.json();
+      const video = data.items?.[0];
+      if (!video) return null;
 
-    const publishedAt = new Date(video.snippet.publishedAt);
+      const publishedAt = new Date(video.snippet.publishedAt);
 
-    if (!lastChecked || publishedAt > new Date(lastChecked)) {
-      notifications.push({
-        id: video.id.videoId,
-        text: `New video from ${channelTitle}: ${video.snippet.title}`,
-        isRead: false,
-        publishedAt,
-      });
+      if (!lastChecked || publishedAt > new Date(lastChecked)) {
+        return {
+          id: video.id.videoId,
+          text: `New video from ${channelTitle}: ${video.snippet.title}`,
+          isRead: false,
+          publishedAt,
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error fetching videos for channel ${channelId}:`, error);
+      return null;
     }
-  }
+  });
 
-  return notifications;
+  // Wait for all requests to complete in parallel
+  const results = await Promise.all(fetchPromises);
+  
+  // Filter out null results
+  return results.filter((notification) => notification !== null);
 };

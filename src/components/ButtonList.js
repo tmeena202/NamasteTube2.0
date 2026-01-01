@@ -46,6 +46,11 @@ const ButtonList = ({ onCategoryChange }) => {
       }
 
       const res = await fetch(YOUTUBE_CATEGORIES_API);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const data = await res.json();
       if (!data?.items?.length) throw new Error("No categories");
 

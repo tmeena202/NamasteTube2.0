@@ -71,10 +71,19 @@ const CommentContainer = ({ videoId }) => {
   useEffect(() => {
     if (!videoId) return;
 
+    const abortController = new AbortController();
+
     const getComments = async () => {
       setLoading(true);
       try {
-        const response = await fetch(YOUTUBE_COMMENTS_API + videoId);
+        const response = await fetch(YOUTUBE_COMMENTS_API + videoId, {
+          signal: abortController.signal,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
 
         const commentsList = (data.items || []).map((item) => {
@@ -100,13 +109,17 @@ const CommentContainer = ({ videoId }) => {
 
         setComments(commentsList);
       } catch (error) {
-        console.error("Error fetching comments:", error);
+        if (error.name !== 'AbortError') {
+          console.error("Error fetching comments:", error);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     getComments();
+    
+    return () => abortController.abort();
   }, [videoId]);
 
   if (loading) {

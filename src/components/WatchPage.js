@@ -10,7 +10,7 @@ import PlaylistModal from "./PlaylistModal";
 import SideVideoCard from "./SideVideoCard";
 
 // ⚠️ Note: If "Video not found" persists, this API Key might be over quota.
-const GOOGLE_API_KEY = "AIzaSyCKGaRs5irugjBrt41U6kI8k8bTdn5YfME";
+const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || "AIzaSyCKGaRs5irugjBrt41U6kI8k8bTdn5YfME";
 
 const WatchPage = () => {
   const [searchParams] = useSearchParams();
@@ -30,12 +30,19 @@ const WatchPage = () => {
 
   // Fetch video details
   useEffect(() => {
+    const abortController = new AbortController();
+    
     const fetchVideoData = async () => {
       if (!videoId) return;
       setLoading(true);
       try {
         const url = `https://youtube.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoId}&key=${GOOGLE_API_KEY}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: abortController.signal });
+        
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        
         const json = await res.json();
 
         if (json.items && json.items.length > 0) {
@@ -44,27 +51,36 @@ const WatchPage = () => {
           console.error("Video not found. API Error or Invalid ID.");
         }
       } catch (error) {
-        console.error("Error fetching video data", error);
+        if (error.name !== 'AbortError') {
+          console.error("Error fetching video data", error);
+        }
       } finally {
         setLoading(false);
       }
     };
     fetchVideoData();
+    
+    return () => abortController.abort();
   }, [videoId]);
 
   // Fetch related videos
   useEffect(() => {
+    const abortController = new AbortController();
+    
     const fetchRelatedVideos = async () => {
-      if (!videoData?.snippet) return;
+      if (!videoId) return; // Use videoId directly instead of waiting for videoData
 
       setLoadingRelatedVideos(true);
       try {
-        // Use channel title to get videos from same channel
-        const channelTitle = videoData.snippet.channelTitle;
-        const searchQuery = channelTitle;
-        const url = `https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=15&type=video&q=${encodeURIComponent(searchQuery)}&key=${GOOGLE_API_KEY}`;
+        // Use YouTube's relatedToVideoId parameter for better related videos
+        const url = `https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=15&type=video&relatedToVideoId=${videoId}&key=${GOOGLE_API_KEY}`;
         
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: abortController.signal });
+        
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        
         const json = await res.json();
 
         if (json.items) {
@@ -75,15 +91,19 @@ const WatchPage = () => {
           setRelatedVideos(filtered.slice(0, 10)); // Limit to 10 suggestions
         }
       } catch (error) {
-        console.error("Error fetching related videos", error);
-        setRelatedVideos([]);
+        if (error.name !== 'AbortError') {
+          console.error("Error fetching related videos", error);
+          setRelatedVideos([]);
+        }
       } finally {
         setLoadingRelatedVideos(false);
       }
     };
 
     fetchRelatedVideos();
-  }, [videoData, videoId]);
+    
+    return () => abortController.abort();
+  }, [videoId]);
 
   if (loading) return <div className="pt-20 px-4">Loading video...</div>;
   if (!videoData)
