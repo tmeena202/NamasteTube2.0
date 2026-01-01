@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { closeMenu } from "../utils/appSlice.js";
 import { useSearchParams } from "react-router-dom";
 import CommentContainer from "./CommentContainer";
@@ -7,7 +7,7 @@ import LiveChat from "./LiveChat.js";
 import VideoActions from "./VideoActions";
 import VideoDescription from "./VideoDescription";
 import PlaylistModal from "./PlaylistModal";
-import SideVideoCard from "./SideVideoCard";
+import RelatedVideos from "./RelatedVideos";
 
 // ⚠️ Note: If "Video not found" persists, this API Key might be over quota.
 const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || "AIzaSyCKGaRs5irugjBrt41U6kI8k8bTdn5YfME";
@@ -20,8 +20,6 @@ const WatchPage = () => {
   const [videoData, setVideoData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
-  const [relatedVideos, setRelatedVideos] = useState([]);
-  const [loadingRelatedVideos, setLoadingRelatedVideos] = useState(false);
 
   // Close sidebar menu on load
   useEffect(() => {
@@ -63,47 +61,6 @@ const WatchPage = () => {
     return () => abortController.abort();
   }, [videoId]);
 
-  // Fetch related videos
-  useEffect(() => {
-    const abortController = new AbortController();
-    
-    const fetchRelatedVideos = async () => {
-      if (!videoId) return; // Use videoId directly instead of waiting for videoData
-
-      setLoadingRelatedVideos(true);
-      try {
-        // Use YouTube's relatedToVideoId parameter for better related videos
-        const url = `https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=15&type=video&relatedToVideoId=${videoId}&key=${GOOGLE_API_KEY}`;
-        
-        const res = await fetch(url, { signal: abortController.signal });
-        
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-        
-        const json = await res.json();
-
-        if (json.items) {
-          // Filter out the current video from suggestions
-          const filtered = json.items.filter(
-            (item) => item.id.videoId !== videoId
-          );
-          setRelatedVideos(filtered.slice(0, 10)); // Limit to 10 suggestions
-        }
-      } catch (error) {
-        if (error.name !== 'AbortError') {
-          console.error("Error fetching related videos", error);
-          setRelatedVideos([]);
-        }
-      } finally {
-        setLoadingRelatedVideos(false);
-      }
-    };
-
-    fetchRelatedVideos();
-    
-    return () => abortController.abort();
-  }, [videoId]);
 
   if (loading) return <div className="pt-20 px-4">Loading video...</div>;
   if (!videoData)
@@ -155,18 +112,7 @@ const WatchPage = () => {
           {/* Right Section */}
           <div className="w-full lg:w-96 flex flex-col gap-6">
             {/* Related Videos Suggestions */}
-            {loadingRelatedVideos ? (
-              <div className="text-sm text-gray-500">Loading suggestions...</div>
-            ) : relatedVideos.length > 0 ? (
-              <div className="flex flex-col gap-3">
-                <h3 className="text-sm font-semibold text-gray-900">
-                  Suggested Videos
-                </h3>
-                {relatedVideos.map((video) => (
-                  <SideVideoCard key={video.id.videoId} video={video} />
-                ))}
-              </div>
-            ) : null}
+            <RelatedVideos videoData={videoData} currentVideoId={videoId} />
 
             <LiveChat />
           </div>
